@@ -54,6 +54,13 @@ def plot_array(array, filename=None, comm=MPI.COMM_WORLD, background_value=0):
 
     comm.Barrier()
 
+def plot_entropy(entropy_history, filename=None):
+    matplotlib.pyplot.plot(entropy_history)
+    if filename is None:
+        matplotlib.pyplot.show()
+    else :
+        matplotlib.pyplot.savefig(filename) 
+    matplotlib.pyplot.clf()
 
 def image_field(
     geom: "Cartesian2D",

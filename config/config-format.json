@@ -579,6 +579,12 @@
             "name": "Post_processing",
             "fields": [
                 {
+                    "name": "enable_relaxation",
+                    "type": "bool",
+                    "default": false,
+                    "description": "Enable relaxation post processing between time steps"
+                },
+                {
                     "name": "enable_schar_mountain",
                     "type": "bool",
                     "default": false,

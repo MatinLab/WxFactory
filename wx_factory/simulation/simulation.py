@@ -40,7 +40,7 @@ from precondition.multigrid import Multigrid
 from process_topology import ProcessTopology
 from rhs.rhs_selector import RhsBundle
 from wx_mpi import SingleProcess, Conditional
-from post_proccessing import PostProcessor, ScharMountainPostProcessor
+from post_proccessing import PostProcessor, ScharMountainPostProcessor, RelaxationPostProcessor
 
 
 class Simulation:
@@ -138,6 +138,10 @@ class Simulation:
         self.Q = self.initial_Q
         self.step_id = self.starting_step
 
+        if self.config.enable_relaxation:
+            relaxation = RelaxationPostProcessor(self.config, self.geometry, self.operators, self.initial_Q)
+            self.post_processors[RelaxationPostProcessor] = relaxation
+
         self.rhs = RhsBundle(
             self.geometry,
             self.operators,
@@ -173,6 +177,9 @@ class Simulation:
 
             if self.rank == 0:
                 print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
+
+            if RelaxationPostProcessor in self.post_processors:
+                self.post_processors[RelaxationPostProcessor].update(self.Q)
 
             self.Q = self.integrator.step(self.Q, self.config.dt)
             self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
@@ -222,7 +229,7 @@ class Simulation:
         while self.step():
             pass  # Step until everything is done
 
-        self.output.finalize(time() - start_time)  # Close any open output file
+        self.output.finalize(time() - start_time, self.step_id, self.Q) #Close any ouput file
 
     def _make_device(self) -> Device:
         """Create the device object which will determine on what hardware (CPU/GPU) each part of the simulation will
