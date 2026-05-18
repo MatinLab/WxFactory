@@ -40,7 +40,7 @@ from precondition.multigrid import Multigrid
 from process_topology import ProcessTopology
 from rhs.rhs_selector import RhsBundle
 from wx_mpi import SingleProcess, Conditional
-from post_proccessing import PostProcessor, ScharMountainPostProcessor
+from post_proccessing import PostProcessor, ScharMountainPostProcessor, RelaxationPostProcessor
 from init.entropy_vars import entropy, entropy_function
 
 
@@ -137,6 +137,10 @@ class Simulation:
         self.Q = self.initial_Q
         self.step_id = self.starting_step
 
+        if self.config.enable_relaxation:
+            relaxation = RelaxationPostProcessor(self.config, self.geometry, self.operators, self.initial_Q)
+            self.post_processors[RelaxationPostProcessor] = relaxation
+
         self.rhs = RhsBundle(
             self.geometry,
             self.operators,
@@ -173,8 +177,14 @@ class Simulation:
             if self.rank == 0:
                 print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
 
+            Q_before_step = self.Q.copy()      
+
             self.Q = self.integrator.step(self.Q, self.config.dt)
             self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
+
+
+            if RelaxationPostProcessor in self.post_processors:
+                self.post_processors[RelaxationPostProcessor].update(Q_before_step, self.Q)
 
             if self.rank == 0:
                 print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)

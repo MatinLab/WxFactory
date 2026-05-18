@@ -405,11 +405,10 @@ def initialize_cartesian2d(geom: Cartesian2D, param: Configuration) -> NDArray[n
         exner = 1.0 - gravity / (cpd * θ) * geom.X3
         ρ = p0 / (Rd * θ) * exner ** (cvd / Rd)
 
-
     Q[idx_2d_rho, :, :] = ρ
     Q[idx_2d_rho_u, :, :] = ρ * uu
     Q[idx_2d_rho_w, :, :] = ρ * ww
-    Q[idx_2d_rho_theta, :, :] = ρ * E
+    Q[idx_2d_rho_theta, :, :] = ρ * θ
 
 
     return Q

@@ -163,27 +163,21 @@ class OutputManager:
                 # print("output_freq",self.config.output_freq)
                 # print("diff", step_id - self.config.output_freq)
                 xp = self.device.xp
-                filename= f"{self.output_dir}/cell_entropy_diff/cell_entropy_diff_{self.config.case_number}_{step_id:08d}"
-                num_solpts = self.geometry.num_solpts
-                # print("epsilon.shape",self.epsilon.shape)
                 diff_idx = step_id - self.config.output_freq
-                # print("\ndiff", step_id - self.config.output_freq)
-            
-                cell_entropy_diff = cell_entropy - self.cell_entropy_history[diff_idx]
-                # print("cell.emntropy_history.shape",self.cell_entropy_history[diff_idx].shape)
-                cell_entropy_to_plot = xp.kron(cell_entropy_diff, xp.ones((num_solpts, num_solpts)))
-                # print("min",xp.min(cell_entropy_to_plot))
-                # print("max",xp.max(cell_entropy_to_plot))
-                # print( xp.min(cell_entropy_to_plot))
-                # print( xp.max(cell_entropy_to_plot))
-                image_field_entropy_diff(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                # filename1= f"{self.output_dir}/cell_entropy_curr_{self.config.case_number}_{step_id:08d}"
-                # cell_entropy_to_plot = xp.kron(cell_entropy, xp.ones((num_solpts, num_solpts)))
-                # image_field(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                # filename2= f"{self.output_dir}/cell_entropy_prev_{self.config.case_number}_{step_id:08d}"
-                # cell_entropy_to_plot = xp.kron(self.cell_entropy_history[diff_idx], xp.ones((num_solpts, num_solpts)))
-                # image_field(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                
+
+                if diff_idx >= 0 and diff_idx < len(self.cell_entropy_history):
+                    filename = f"{self.output_dir}/cell_entropy_diff/cell_entropy_diff_{self.config.case_number}_{step_id:08d}"
+                    num_solpts = self.geometry.num_solpts
+                    cell_entropy_diff = cell_entropy - self.cell_entropy_history[diff_idx]
+                    cell_entropy_to_plot = xp.kron(cell_entropy_diff, xp.ones((num_solpts, num_solpts)))
+                    image_field_entropy_diff(
+                        self.geometry,
+                        cell_entropy_to_plot,
+                        filename,
+                        xp.min(cell_entropy_to_plot) - 1e-14,
+                        xp.max(cell_entropy_to_plot) + 1e-14,
+                        100,
+                    )
         if self.config.save_state_freq > 0 and (step_id % self.config.save_state_freq) == 0:
             t0 = time()
             total_state = self._gather_field(Q, self.num_dim + 1)

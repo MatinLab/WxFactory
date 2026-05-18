@@ -281,3 +281,35 @@ def entropy_function(Q: NDArray, geom: Cartesian2D) -> NDArray[numpy.float64]:
     ρ, ρu, ρw, ρE, u, w, p, ρe, e = conservative_to_prim(Q)
     s = entropy(Q, geom)
     return -ρ * s
+
+def global_entropy(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
+    """Computes the global entropy of the system by integrating the 
+    physical entropy s = log(p / rho**gamma) over the domain
+    using quadrature weights."""
+    xp = geom.device.xp
+    S = entropy(Q, geom)
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0 * xp.sum(S * operators.weights_volume_integral))
+
+def entropy_from_rhotheta(Q: NDArray, geom: Cartesian2D) -> NDArray:
+    """Physical entropy s = log(p) - gamma*log(rho), computed assuming
+    slot 3 of Q holds rho*theta (the formulation the RHS actually uses).
+
+    Independent of conservative_to_prim, which currently assumes rho*E.
+    """
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    ρ  = Q[idx_2d_rho, :, :]
+    ρθ = Q[idx_2d_rho_theta, :, :]
+
+    # Recover pressure via the exner-based ideal-gas relation
+    p = p0 * (Rd * ρθ / p0) ** gamma
+
+    return xp.log(p) - gamma * xp.log(ρ)
+
+
+def global_entropy_rhotheta(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
+    """Integrated physical entropy, rho*theta formulation."""
+    xp = geom.device.xp
+    s = entropy_from_rhotheta(Q, geom)
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0 * xp.sum(s * operators.weights_volume_integral))
