@@ -104,6 +104,9 @@ class OutputManager:
         # Entropy 
         self.integrated_entropy_history = []
         self.cell_entropy_history = []
+        
+        # L2 error
+        self.L2_error_history = []
 
     def state_file_name(self, step_id: int) -> str:
         """Return the name of the file where to save the state vector for the current problem,
@@ -135,7 +138,7 @@ class OutputManager:
 
         return Q, step_id
 
-    def step(self, Q: NDArray, step_id: int, integrated_entropy: float = None, cell_entropy = None, epsilon: NDArray = None) -> None:
+    def step(self, Q: NDArray, step_id: int, integrated_entropy: float = None,L2_error : float = None, cell_entropy = None, epsilon: NDArray = None) -> None:
         """Output the result of the latest timestep."""
         if self.config.output_freq > 0 and (step_id % self.config.output_freq) == 0:
             if self.comm.rank == 0:
@@ -159,31 +162,18 @@ class OutputManager:
                 image_field(self.geometry, epsilon_to_plot, filename, xp.min(epsilon) - 1e-10, xp.max(epsilon)+1e-10, 100)
                 
             if cell_entropy is not None:
-                # print("step_id",step_id)
-                # print("output_freq",self.config.output_freq)
-                # print("diff", step_id - self.config.output_freq)
                 xp = self.device.xp
                 filename= f"{self.output_dir}/cell_entropy_diff/cell_entropy_diff_{self.config.case_number}_{step_id:08d}"
                 num_solpts = self.geometry.num_solpts
-                # print("epsilon.shape",self.epsilon.shape)
                 diff_idx = step_id - self.config.output_freq
-                # print("\ndiff", step_id - self.config.output_freq)
+                
             
                 cell_entropy_diff = cell_entropy - self.cell_entropy_history[diff_idx]
-                # print("cell.emntropy_history.shape",self.cell_entropy_history[diff_idx].shape)
+               
                 cell_entropy_to_plot = xp.kron(cell_entropy_diff, xp.ones((num_solpts, num_solpts)))
-                # print("min",xp.min(cell_entropy_to_plot))
-                # print("max",xp.max(cell_entropy_to_plot))
-                # print( xp.min(cell_entropy_to_plot))
-                # print( xp.max(cell_entropy_to_plot))
+           
                 image_field_entropy_diff(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                # filename1= f"{self.output_dir}/cell_entropy_curr_{self.config.case_number}_{step_id:08d}"
-                # cell_entropy_to_plot = xp.kron(cell_entropy, xp.ones((num_solpts, num_solpts)))
-                # image_field(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                # filename2= f"{self.output_dir}/cell_entropy_prev_{self.config.case_number}_{step_id:08d}"
-                # cell_entropy_to_plot = xp.kron(self.cell_entropy_history[diff_idx], xp.ones((num_solpts, num_solpts)))
-                # image_field(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
-                
+               
         if self.config.save_state_freq > 0 and (step_id % self.config.save_state_freq) == 0:
             t0 = time()
             total_state = self._gather_field(Q, self.num_dim + 1)
@@ -203,6 +193,8 @@ class OutputManager:
             self.integrated_entropy_history.append(integrated_entropy)
         if cell_entropy is not None:
             self.cell_entropy_history.append(cell_entropy)
+        if L2_error != None:
+            self.L2_error_history.append(L2_error)
             
         # print("length(self.integrated_entropy_history)",len(self.integrated_entropy_history))
         # print("\n")
@@ -277,9 +269,17 @@ class OutputManager:
                 flush=True,
             )
         
-        # print("plotting entropy")
-        # Compute and plot entropy history over time steps
+        # plot and save entropy history over time steps
         plot_entropy(self.integrated_entropy_history,"results/entropy_func_history")
+        self.save_list_to_file(self.integrated_entropy_history, "results","data_entropy_func_history.npy")
+        
+        # plot and save L2 error history over time steps
+        plot_entropy(self.L2_error_history,"results/L2_error_history")
+        self.save_list_to_file(self.L2_error_history, "results","data_L2_error_history.npy")
+        
+        # Save the configuration 
+        self.save_config("results","configuration.txt")
+        
         
         make_animations = False
         # TODO: implement 
@@ -290,6 +290,41 @@ class OutputManager:
             create_animation(self.output_dir,"epsilon",f"epsilon_{self.config.case_number}",f"epsilon_{self.config.case_number}")
             # create_animation cell_entropy_diff
             # create_animation euler2D
+            
+            
+    def save_list_to_file(self,values: list,path: str, filename: str):
+        xp = self.device.xp
+        
+        full_path = f"{path}/{filename}"
+        xp.save(full_path, xp.array(values))
+
+        # with open(full_path, "w") as f:
+        #     for value in values:
+        #         f.write(f"{value}\n")
+        
+    def save_config(self, path: str, filename: str):
+        """
+        Save all public attributes from self.config to a text file.
+        """
+        # xp = self.device.xp
+        
+        full_path = f"{path}/{filename}"
+
+        with open(full_path, "w") as f:
+            f.write("# Simulation Configuration\n\n")
+            
+            f.write(f"case_number = {self.config.case_number}\n")
+            f.write(f"esav = {self.config.esav}\n")
+            
+            f.write("\n[Time discretisation]\n")
+            f.write(f"dt = {self.config.dt}\n")
+            f.write(f"t_end = {self.config.t_end}\n")
+            f.write(f"time_integrator = {self.config.time_integrator}\n")
+            
+            f.write("\n[Spatial discretisation]\n")
+            f.write(f"num_solpts = {self.config.num_solpts}\n")
+            f.write(f"num_elements_horizontal = {self.config.num_elements_horizontal}\n")
+            f.write(f"num_elements_vertical = {self.config.num_elements_vertical}\n")
             
             
         
