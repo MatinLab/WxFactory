@@ -60,7 +60,15 @@ class OutputManager:
         self.num_dim = 3 if isinstance(geometry, CubedSphere3D) else 2
 
         with SingleProcess(self.comm) as s, Conditional(s):
-            output_dir = self.config.output_dir
+            # Make subdir based on configuration
+            if self.config.case_number == 100:
+                case_name = "1d_entropy_wave"
+            elif self.config.case_number == 101:
+                case_name = "2d_entropy_wave"
+            elif self.config.case_number == 102:
+                case_name = "riemann"
+            subdir = f"{case_name}_dt{self.config.dt:.0e}_t{self.config.t_end:.0e}_p{self.config.num_solpts}_nh{self.config.num_elements_horizontal}_nv{self.config.num_elements_vertical}" 
+            output_dir = f"{self.config.output_dir}/{subdir}"
             try:
                 os.makedirs(os.path.abspath(output_dir), exist_ok=True)
                 # epsilon
@@ -270,15 +278,15 @@ class OutputManager:
             )
         
         # plot and save entropy history over time steps
-        plot_entropy(self.integrated_entropy_history,"results/entropy_func_history")
-        self.save_list_to_file(self.integrated_entropy_history, "results","data_entropy_func_history.npy")
+        plot_entropy(self.integrated_entropy_history,f"{self.output_dir}/entropy_func_history")
+        self.save_list_to_file(self.integrated_entropy_history, self.output_dir,"data_entropy_func_history.npy")
         
         # plot and save L2 error history over time steps
-        plot_entropy(self.L2_error_history,"results/L2_error_history")
-        self.save_list_to_file(self.L2_error_history, "results","data_L2_error_history.npy")
+        plot_entropy(self.L2_error_history,f"{self.output_dir}/L2_error_history")
+        self.save_list_to_file(self.L2_error_history, self.output_dir,"data_L2_error_history.npy")
         
         # Save the configuration 
-        self.save_config("results","configuration.txt")
+        self.save_config(self.output_dir,"configuration.txt")
         
         
         make_animations = False
