@@ -33,10 +33,13 @@ output_dir = Path("config/param_change")
 
 output_dir.mkdir(parents=True, exist_ok=True)
 
+dt_str = f"{args.dt:.0e}".replace("e-0", "e-").replace("e+0", "e+")
+t_end_str = int(args.t_end) if args.t_end.is_integer() else args.t_end
+
 output_file = output_dir / (
     f"case_{args.case_number}_"
-    f"dt_{args.dt}_"
-    f"tend_{args.t_end}_"
+    f"dt_{dt_str}_"
+    f"tend_{t_end_str}_"
     f"solpts_{args.num_solpts}_"
     f"nx_{args.num_elements_horizontal}_"
     f"ny_{args.num_elements_vertical}.ini"
