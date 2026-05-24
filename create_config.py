@@ -20,6 +20,7 @@ parser.add_argument("t_end", type=float)
 parser.add_argument("num_solpts", type=int)
 parser.add_argument("num_elements_horizontal", type=int)
 parser.add_argument("num_elements_vertical", type=int)
+parser.add_argument("output_freq", type=int)
 
 args = parser.parse_args()
 
@@ -66,6 +67,10 @@ config["Spatial_discretization"]["num_elements_horizontal"] = str(
 )
 config["Spatial_discretization"]["num_elements_vertical"] = str(
     args.num_elements_vertical
+)
+
+config["Output_options"]["output_freq"] = str(
+    args.output_freq
 )
 
 # ----------------------------

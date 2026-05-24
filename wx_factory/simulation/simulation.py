@@ -171,14 +171,14 @@ class Simulation:
 
             self.step_id += 1
 
-            if self.rank == 0:
-                print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
+            # if self.rank == 0:
+            #     print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
 
             self.Q = self.integrator.step(self.Q, self.config.dt)
             self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
 
-            if self.rank == 0:
-                print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)
+            # if self.rank == 0:
+            #     print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)
 
             # Check whether there are any NaNs in the solution
             # TODO put this inside the `step` function of the integrator
