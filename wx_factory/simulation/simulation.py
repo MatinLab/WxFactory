@@ -180,8 +180,9 @@ class Simulation:
             Q_before_step = self.Q.copy()      
 
             self.Q = self.integrator.step(self.Q, self.config.dt)
-            self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
+            #self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
 
+            Q_after_step = self.Q.copy()
 
             if RelaxationPostProcessor in self.post_processors:
                 self.post_processors[RelaxationPostProcessor].update(Q_before_step, self.Q)
@@ -212,6 +213,8 @@ class Simulation:
 
             for post_precessor_type in self.post_processors:
                 self.post_processors[post_precessor_type].process()
+                
+
                 
             # Compute integrated entropy
             xp = self.device.xp

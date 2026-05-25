@@ -35,7 +35,14 @@ LowerCaseStr.__name__ = "lc-str"
 
 
 def str_to_bool(val: str):
-    return bool(int(val))
+    if isinstance(val, bool):
+        return val
+    if val.lower() in ('true', '1', 'yes', 'on'):
+        return True
+    elif val.lower() in ('false', '0', 'no', 'off'):
+        return False
+    else:
+        raise ValueError(f"Cannot convert '{val}' to boolean")
 
 
 OptionType = TypeVar("OptionType", bound=Union[str, CaseSensitiveStr, int, float, List[int], List[float], bool])

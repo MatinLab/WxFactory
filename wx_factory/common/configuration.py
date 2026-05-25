@@ -108,6 +108,7 @@ class Configuration:
     alpha0: float
     apply_sponge: bool
     base_output_file: str
+    esav: bool
     bubble_rad: float
     bubble_theta: float
     case_number: int

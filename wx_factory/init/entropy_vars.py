@@ -87,30 +87,32 @@ def entropy_to_conservative(V: NDArray, geom: Cartesian2D, param: Configuration)
     v4 = V[idx_2d_rho_theta, :, :]
 
     # _________________________________________________
-    # beta = -v4
+    beta = -v4
 
-    # uu = v2 / beta
-    # ww = v3 / beta
+    uu = v2 / beta
+    ww = v3 / beta
 
-    # s = gamma - (gamma - 1) * v1 - 0.5 * (gamma - 1) * beta (uu**2 + ww**2)
+    s = gamma - (gamma - 1) * v1 - 0.5 * (gamma - 1) * beta * (uu**2 + ww**2)
 
-    # rho = xp.exp(-s/(gamma-1)) * xp.power(beta,-1/(gamma-1))
+    ρ = xp.exp(-s/(gamma-1)) * xp.power(beta,-1/(gamma-1))
 
-    # p = rho/beta
-    # rho_u = rho * uu
-    # rho_w = rho * ww
-    # rho_E = p/(gamma-1) + 0.5 * rho * (uu**2 + ww**2)
+    p = ρ/beta
+    ρ_uu = ρ * uu
+    ρ_ww = ρ * ww
+    ρ_E = p/(gamma-1) + 0.5 * ρ * (uu**2 + ww**2)
     # _________________________________________________
 
-    s = gamma - v1 + (v2**2 + v3**2) / (2 * v4)
+     # _________________________________________________
 
-    # Check this formula!!!!
-    ρ_e = ((gamma - 1) / (-v4) ** gamma) ** (1 / (gamma - 1)) * xp.exp(-s / (gamma - 1))
+    # s = gamma - v1 + (v2**2 + v3**2) / (2 * v4)
 
-    ρ = -ρ_e * v4
-    ρ_uu = ρ_e * v2
-    ρ_ww = ρ_e * v3
-    ρ_E = ρ_e * (1 - (v2**2 + v3**2) / (2 * v4))
+    # # Check this formula!!!!
+    # ρ_e = ((gamma - 1) / (-v4) ** gamma) ** (1 / (gamma - 1)) * xp.exp(-s / (gamma - 1))
+
+    # ρ = -ρ_e * v4
+    # ρ_uu = ρ_e * v2
+    # ρ_ww = ρ_e * v3
+    # ρ_E = ρ_e * (1 - (v2**2 + v3**2) / (2 * v4))
 
     Q = xp.zeros_like(V)
 
@@ -283,12 +285,19 @@ def entropy_function(Q: NDArray, geom: Cartesian2D) -> NDArray[numpy.float64]:
     return -ρ * s
 
 def global_entropy(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
-    """Computes the global entropy of the system by integrating the 
-    physical entropy s = log(p / rho**gamma) over the domain
-    using quadrature weights."""
+    """Integrated mathematical entropy η = -ρ·s, using p = p0·(Rd·ρθ/p0)^γ."""
     xp = geom.device.xp
-    S = entropy(Q, geom)
-    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0 * xp.sum(S * operators.weights_volume_integral))
+    gamma = cpd / cvd
+
+    ρ  = Q[idx_2d_rho, :, :]
+    ρθ = Q[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * ρθ / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(ρ)
+    eta = -ρ * s
+
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.sum(eta * operators.weights_volume_integral))
 
 def entropy_from_rhotheta(Q: NDArray, geom: Cartesian2D) -> NDArray:
     """Physical entropy s = log(p) - gamma*log(rho), computed assuming
@@ -305,7 +314,7 @@ def entropy_from_rhotheta(Q: NDArray, geom: Cartesian2D) -> NDArray:
     # Recover pressure via the exner-based ideal-gas relation
     p = p0 * (Rd * ρθ / p0) ** gamma
 
-    return xp.log(p) - gamma * xp.log(ρ)
+    return -(xp.log(p) + gamma * xp.log(ρ))
 
 
 def global_entropy_rhotheta(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
@@ -313,3 +322,21 @@ def global_entropy_rhotheta(Q: NDArray, geom: Cartesian2D, operators: DFROperato
     xp = geom.device.xp
     s = entropy_from_rhotheta(Q, geom)
     return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0 * xp.sum(s * operators.weights_volume_integral))
+
+def entropy_prime_function(Q_relaxed, dQ, geom, operators):
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    ρ  = Q_relaxed[idx_2d_rho, :, :]
+    ρθ = Q_relaxed[idx_2d_rho_theta, :, :]
+    dρ  = dQ[idx_2d_rho, :, :]
+    dρθ = dQ[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * ρθ / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(ρ)
+
+    # dS/dρ = -s + γ,  dS/d(ρθ) = -γ ρ / (ρθ)
+    dS = (-s + gamma) * dρ - (gamma * ρ / ρθ) * dρθ
+
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.sum(dS * operators.weights_volume_integral))
