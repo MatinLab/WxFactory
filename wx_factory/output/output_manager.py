@@ -159,25 +159,17 @@ class OutputManager:
                 image_field(self.geometry, epsilon_to_plot, filename, xp.min(epsilon) - 1e-10, xp.max(epsilon)+1e-10, 100)
                 
             if cell_entropy is not None:
-                # print("step_id",step_id)
-                # print("output_freq",self.config.output_freq)
-                # print("diff", step_id - self.config.output_freq)
                 xp = self.device.xp
+                filename= f"{self.output_dir}/cell_entropy_diff/cell_entropy_diff_{self.config.case_number}_{step_id:08d}"
+                num_solpts = self.geometry.num_solpts
                 diff_idx = step_id - self.config.output_freq
-
-                if diff_idx >= 0 and diff_idx < len(self.cell_entropy_history):
-                    filename = f"{self.output_dir}/cell_entropy_diff/cell_entropy_diff_{self.config.case_number}_{step_id:08d}"
-                    num_solpts = self.geometry.num_solpts
-                    cell_entropy_diff = cell_entropy - self.cell_entropy_history[diff_idx]
-                    cell_entropy_to_plot = xp.kron(cell_entropy_diff, xp.ones((num_solpts, num_solpts)))
-                    image_field_entropy_diff(
-                        self.geometry,
-                        cell_entropy_to_plot,
-                        filename,
-                        xp.min(cell_entropy_to_plot) - 1e-14,
-                        xp.max(cell_entropy_to_plot) + 1e-14,
-                        100,
-                    )
+                
+            
+                cell_entropy_diff = cell_entropy - self.cell_entropy_history[diff_idx]
+               
+                cell_entropy_to_plot = xp.kron(cell_entropy_diff, xp.ones((num_solpts, num_solpts)))
+           
+                image_field_entropy_diff(self.geometry, cell_entropy_to_plot, filename, xp.min(cell_entropy_to_plot) - 1e-14, xp.max(cell_entropy_to_plot)+1e-14, 100)
         if self.config.save_state_freq > 0 and (step_id % self.config.save_state_freq) == 0:
             t0 = time()
             total_state = self._gather_field(Q, self.num_dim + 1)

@@ -137,10 +137,6 @@ class Simulation:
         self.Q = self.initial_Q
         self.step_id = self.starting_step
 
-        if self.config.enable_relaxation:
-            relaxation = RelaxationPostProcessor(self.config, self.geometry, self.operators, self.initial_Q)
-            self.post_processors[RelaxationPostProcessor] = relaxation
-
         self.rhs = RhsBundle(
             self.geometry,
             self.operators,
@@ -151,6 +147,12 @@ class Simulation:
             self.initial_Q.shape,
             self.device,
         )
+        #from pde.central_flux_override import patch_pde_with_central_flux
+        #patch_pde_with_central_flux(self.rhs.full.pde)
+
+        if self.config.enable_relaxation:
+            relaxation = RelaxationPostProcessor(self.config, self.geometry, self.operators, self.initial_Q, self.rhs.full)
+            self.post_processors[RelaxationPostProcessor] = relaxation
 
         self.integrator = self._create_time_integrator(self.config.time_integrator)
         self.integrator.output_manager = self.output
@@ -166,18 +168,16 @@ class Simulation:
     def step(self):
         """Advance the simulation by one time step."""
         if self.t < self.config.t_end:
-            if self.t + self.config.dt > self.config.t_end:
-                self.config.dt = self.config.t_end - self.t
-                self.t = self.config.t_end
-            else:
-                self.t += self.config.dt
+            t_before = self.t
+            if t_before + self.config.dt > self.config.t_end:
+                self.config.dt = self.config.t_end - t_before
 
             self.step_id += 1
 
             if self.rank == 0:
                 print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
 
-            Q_before_step = self.Q.copy()      
+            Q_before_step = self.Q.copy()
 
             self.Q = self.integrator.step(self.Q, self.config.dt)
             #self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
@@ -185,8 +185,7 @@ class Simulation:
             Q_after_step = self.Q.copy()
 
             if RelaxationPostProcessor in self.post_processors:
-                self.post_processors[RelaxationPostProcessor].update(Q_before_step, self.Q)
-
+                self.post_processors[RelaxationPostProcessor].update(Q_before_step, self.Q, self.config.dt)
             if self.rank == 0:
                 print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)
 
@@ -213,6 +212,15 @@ class Simulation:
 
             for post_precessor_type in self.post_processors:
                 self.post_processors[post_precessor_type].process()
+
+            # Advance simulation clock using the effective dt (gamma * dt if relaxation ran, else dt)
+            if RelaxationPostProcessor in self.post_processors:
+                dt_actual = self.post_processors[RelaxationPostProcessor].dt_effective
+            else:
+                dt_actual = self.config.dt
+
+            self.t = t_before + dt_actual
+            self.integrator.sim_time = self.t
                 
 
                 

@@ -177,7 +177,7 @@ class RHSDirectFluxReconstruction_ESAV(RHS):
         """Computes the elementwise constant viscosity coefficient"""
         # TODO: implement the entropy preserving viscosity coeffs
         xp = self.device.xp
-        entropy_stable_coeff = True
+        entropy_stable_coeff = False
 
         if entropy_stable_coeff:
             sigma = self.entropy_residual()

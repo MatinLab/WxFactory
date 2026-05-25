@@ -292,36 +292,14 @@ def global_entropy(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> fl
     ρ  = Q[idx_2d_rho, :, :]
     ρθ = Q[idx_2d_rho_theta, :, :]
 
-    p = p0 * (Rd * ρθ / p0) ** gamma
+    #p = p0 * (Rd * ρθ / p0) ** gamma
+    p = Rd * ρθ
     s = xp.log(p) - gamma * xp.log(ρ)
     eta = -ρ * s
 
     return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
                  * xp.sum(eta * operators.weights_volume_integral))
 
-def entropy_from_rhotheta(Q: NDArray, geom: Cartesian2D) -> NDArray:
-    """Physical entropy s = log(p) - gamma*log(rho), computed assuming
-    slot 3 of Q holds rho*theta (the formulation the RHS actually uses).
-
-    Independent of conservative_to_prim, which currently assumes rho*E.
-    """
-    xp = geom.device.xp
-    gamma = cpd / cvd
-
-    ρ  = Q[idx_2d_rho, :, :]
-    ρθ = Q[idx_2d_rho_theta, :, :]
-
-    # Recover pressure via the exner-based ideal-gas relation
-    p = p0 * (Rd * ρθ / p0) ** gamma
-
-    return -(xp.log(p) + gamma * xp.log(ρ))
-
-
-def global_entropy_rhotheta(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
-    """Integrated physical entropy, rho*theta formulation."""
-    xp = geom.device.xp
-    s = entropy_from_rhotheta(Q, geom)
-    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0 * xp.sum(s * operators.weights_volume_integral))
 
 def entropy_prime_function(Q_relaxed, dQ, geom, operators):
     xp = geom.device.xp
@@ -333,10 +311,40 @@ def entropy_prime_function(Q_relaxed, dQ, geom, operators):
     dρθ = dQ[idx_2d_rho_theta, :, :]
 
     p = p0 * (Rd * ρθ / p0) ** gamma
+    #p = Rd * ρθ
     s = xp.log(p) - gamma * xp.log(ρ)
 
     # dS/dρ = -s + γ,  dS/d(ρθ) = -γ ρ / (ρθ)
-    dS = (-s + gamma) * dρ - (gamma * ρ / ρθ) * dρθ
+    dS = (-s + gamma) * dρ - (gamma*ρ / ρθ) * dρθ
 
     return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
                  * xp.sum(dS * operators.weights_volume_integral))
+
+def entropy_variables_rhotheta(Q: NDArray, geom: Cartesian2D) -> NDArray:
+    """Entropy variables v = d eta / d Q, consistent with global_entropy
+    (rho-theta formulation, eta = -rho * s)."""
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    rho   = Q[idx_2d_rho, :, :]
+    rhoth = Q[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * rhoth / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(rho)
+
+    V = xp.zeros_like(Q)
+    V[idx_2d_rho,       :, :] = -s + gamma
+    V[idx_2d_rho_u,     :, :] = 0.0
+    V[idx_2d_rho_w,     :, :] = 0.0
+    V[idx_2d_rho_theta, :, :] = -gamma * rho / rhoth
+    return V
+
+
+def entropy_inner_product(V: NDArray, F: NDArray,
+                          geom: Cartesian2D, operators: DFROperators) -> float:
+    """Discrete L^2 inner product sum_var integral(V_var * F_var) dx."""
+    xp = geom.device.xp
+    # Sum over variable index, then integrate
+    integrand = xp.sum(V * F, axis=0)   # shape (ne_z, ne_x, npts)
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.sum(integrand * operators.weights_volume_integral))
