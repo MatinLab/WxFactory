@@ -67,6 +67,7 @@ def plot_array(array, filename=None, comm=MPI.COMM_WORLD, background_value=0):
     
 def plot_entropy(entropy_history, filename=None):
     matplotlib.pyplot.plot(entropy_history)
+    plt.ylim(-2.213, -2.211)
     if filename is None:
         matplotlib.pyplot.show()
     else :

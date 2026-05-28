@@ -40,8 +40,8 @@ from precondition.multigrid import Multigrid
 from process_topology import ProcessTopology
 from rhs.rhs_selector import RhsBundle
 from wx_mpi import SingleProcess, Conditional
-from post_proccessing import PostProcessor, ScharMountainPostProcessor
-from init.entropy_vars import entropy, entropy_function
+from post_proccessing import PostProcessor, ScharMountainPostProcessor, RelaxationPostProcessor
+from init.entropy_vars import entropy, entropy_function, entropy_rate
 from init.initialize import exact_solution
 from common.graphx import plot_entropy, image_field, image_field_entropy_diff, create_animation
 
@@ -149,6 +149,11 @@ class Simulation:
             self.device,
         )
 
+        if self.config.enable_relaxation:
+            relaxation = RelaxationPostProcessor(self.config, self.geometry, self.operators, self.initial_Q, self.rhs.full)
+            self.post_processors[RelaxationPostProcessor] = relaxation
+
+
         self.integrator = self._create_time_integrator(self.config.time_integrator)
         self.integrator.output_manager = self.output
         self.integrator.device = self.device
@@ -162,78 +167,93 @@ class Simulation:
 
     def step(self):
         """Advance the simulation by one time step."""
-        if self.t < self.config.t_end:
-            if self.t + self.config.dt > self.config.t_end:
-                self.config.dt = self.config.t_end - self.t
-                self.t = self.config.t_end
-            else:
-                self.t += self.config.dt
+        # Terminate if we've reached t_end (allow tiny floating-point slack)
+        if self.t >= self.config.t_end - 1e-6:
+            return False
 
-            self.step_id += 1
+        # Provisional step size (cap at remaining time)
+        dt = self.config.dt
+        if self.t + dt > self.config.t_end:
+            dt = self.config.t_end - self.t
 
-            # if self.rank == 0:
-            #     print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
+        self.step_id += 1
 
-            self.Q = self.integrator.step(self.Q, self.config.dt)
-            self.Q = self.operators.apply_filters(self.Q, self.geometry, self.metric, self.config.dt)
+        # if self.rank == 0:
+        #     print(f"Step {self.step_id} of {self.num_steps + self.starting_step}", flush=True)
 
-            # if self.rank == 0:
-            #     print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)
+        Q_before_step = self.Q.copy()
+        self.Q = self.integrator.step(self.Q, self.config.dt)
 
-            # Check whether there are any NaNs in the solution
-            # TODO put this inside the `step` function of the integrator
-            self._check_for_nan(self.Q)
+        if RelaxationPostProcessor in self.post_processors:
+            f_before = self.rhs.full(Q_before_step)
+            f_after  = self.rhs.full(self.Q)
+            self.post_processors[RelaxationPostProcessor].update(
+                Q_before_step, self.Q, self.config.dt, f_before, f_after
+            )
 
-            # Overwrite winds for some DCMIP tests
-            # TODO put this inside the `step` function of the integrator
-            if self.config.case_number == 11:
-                u1_contra, u2_contra, w_wind = dcmip_T11_update_winds(
-                    self.geometry, self.metric, self.operators, self.config, time=self.t
-                )
-                self.Q[idx_rho_u1, :, :, :] = self.Q[idx_rho, :, :, :] * u1_contra
-                self.Q[idx_rho_u2, :, :, :] = self.Q[idx_rho, :, :, :] * u2_contra
-                self.Q[idx_rho_w, :, :, :] = self.Q[idx_rho, :, :, :] * w_wind
-            elif self.config.case_number == 12:
-                u1_contra, u2_contra, w_wind = dcmip_T12_update_winds(
-                    self.geometry, self.metric, self.operators, self.config, time=self.t
-                )
-                self.Q[idx_rho_u1, :, :, :] = self.Q[idx_rho, :, :, :] * u1_contra
-                self.Q[idx_rho_u2, :, :, :] = self.Q[idx_rho, :, :, :] * u2_contra
-                self.Q[idx_rho_w, :, :, :] = self.Q[idx_rho, :, :, :] * w_wind
+        # if self.rank == 0:
+        #     print(f"Elapsed time for step: {self.integrator.latest_time:.3f} secs", flush=True)
 
-            for post_precessor_type in self.post_processors:
-                self.post_processors[post_precessor_type].process()
-                
-            # Compute integrated entropy
-            xp = self.device.xp
-            entropy_func = entropy_function(self.Q,self.geometry)
-            # TODO: move integration to the function or use the one from RHSDirectFluxReconstruction_ESAV
-            entropy_func_integrated = self.geometry.Δx1 / 2.0 * self.geometry.Δx3 / 2.0 * xp.sum(entropy_func * self.operators.weights_volume_integral)
-            entropy_func_cell = self.geometry.Δx1 / 2.0 * self.geometry.Δx3 / 2.0 * xp.einsum('vhp,p->vh', entropy_func, self.operators.weights_volume_integral)
+        # Check whether there are any NaNs in the solution
+        # TODO put this inside the `step` function of the integrator
+        self._check_for_nan(self.Q)
+
+        # Overwrite winds for some DCMIP tests
+        # TODO put this inside the `step` function of the integrator
+        if self.config.case_number == 11:
+            u1_contra, u2_contra, w_wind = dcmip_T11_update_winds(
+                self.geometry, self.metric, self.operators, self.config, time=self.t
+            )
+            self.Q[idx_rho_u1, :, :, :] = self.Q[idx_rho, :, :, :] * u1_contra
+            self.Q[idx_rho_u2, :, :, :] = self.Q[idx_rho, :, :, :] * u2_contra
+            self.Q[idx_rho_w, :, :, :] = self.Q[idx_rho, :, :, :] * w_wind
+        elif self.config.case_number == 12:
+            u1_contra, u2_contra, w_wind = dcmip_T12_update_winds(
+                self.geometry, self.metric, self.operators, self.config, time=self.t
+            )
+            self.Q[idx_rho_u1, :, :, :] = self.Q[idx_rho, :, :, :] * u1_contra
+            self.Q[idx_rho_u2, :, :, :] = self.Q[idx_rho, :, :, :] * u2_contra
+            self.Q[idx_rho_w, :, :, :] = self.Q[idx_rho, :, :, :] * w_wind
+
+        for post_precessor_type in self.post_processors:
+            self.post_processors[post_precessor_type].process()
+
+        if RelaxationPostProcessor in self.post_processors:
+            gamma = self.post_processors[RelaxationPostProcessor].gamma
+        else:
+            gamma = 1.0
+        self.t += gamma * dt
             
-            # Compute L2 error
-            if self.config.case_number == 100 or self.config.case_number == 101:
-                exact_Q = exact_solution(self.geometry, self.config, self.t)
-                # if self.config.output_freq > 0 and (self.step_id % self.config.output_freq) == 0:
-                #     filename= f"{self.config.output_dir}/exact_sol/exact_sol_{self.config.case_number}_{self.step_id:08d}"
-                #     exact_Q_block = self.geometry.to_single_block(exact_Q)
-                #     image_field(self.geometry, exact_Q_block[0,...], filename, xp.min(exact_Q[0,...]) - 1e-10, xp.max(exact_Q[0,...])+1e-10, 100)
-                ptwise_error = self.Q - exact_Q
+        # Compute integrated entropy
+        xp = self.device.xp
+        entropy_func = entropy_function(self.Q,self.geometry)
+        # TODO: move integration to the function or use the one from RHSDirectFluxReconstruction_ESAV
+        entropy_func_integrated = self.geometry.Δx1 / 2.0 * self.geometry.Δx3 / 2.0 * xp.sum(entropy_func * self.operators.weights_volume_integral)
+        entropy_func_cell = self.geometry.Δx1 / 2.0 * self.geometry.Δx3 / 2.0 * xp.einsum('vhp,p->vh', entropy_func, self.operators.weights_volume_integral)
+        
+        # Compute L2 error
+        if self.config.case_number == 100 or self.config.case_number == 101:
+            exact_Q = exact_solution(self.geometry, self.config, self.t)
+            # if self.config.output_freq > 0 and (self.step_id % self.config.output_freq) == 0:
+            #     filename= f"{self.config.output_dir}/exact_sol/exact_sol_{self.config.case_number}_{self.step_id:08d}"
+            #     exact_Q_block = self.geometry.to_single_block(exact_Q)
+            #     image_field(self.geometry, exact_Q_block[0,...], filename, xp.min(exact_Q[0,...]) - 1e-10, xp.max(exact_Q[0,...])+1e-10, 100)
+            ptwise_error = self.Q - exact_Q
+        
+            L2_error = xp.sqrt(
+                self.geometry.Δx1 
+                / 2.0 
+                * self.geometry.Δx3 
+                / 2.0 
+                * xp.sum(xp.abs(ptwise_error)**2 * self.operators.weights_volume_integral))
+        else:
+            L2_error = None
             
-                L2_error = xp.sqrt(
-                    self.geometry.Δx1 
-                    / 2.0 
-                    * self.geometry.Δx3 
-                    / 2.0 
-                    * xp.sum(xp.abs(ptwise_error)**2 * self.operators.weights_volume_integral))
-            else:
-                L2_error = None
-                
-            self.output.step(self.Q, self.step_id, entropy_func_integrated, L2_error, entropy_func_cell, self.rhs.full.epsilon)  # Perform any requested output
-            sys.stdout.flush()
+        self.output.step(self.Q, self.step_id, entropy_func_integrated, L2_error, entropy_func_cell, self.rhs.full.epsilon)  # Perform any requested output
+        sys.stdout.flush()
 
-            if self.integrator.failure_flag == 0:
-                return True
+        if self.integrator.failure_flag == 0:
+            return True
 
         return False
 

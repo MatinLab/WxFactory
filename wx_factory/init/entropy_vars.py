@@ -281,3 +281,71 @@ def entropy_function(Q: NDArray, geom: Cartesian2D) -> NDArray[numpy.float64]:
     ρ, ρu, ρw, ρE, u, w, p, ρe, e = conservative_to_prim(Q)
     s = entropy(Q, geom)
     return -ρ * s
+
+def global_entropy(Q: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
+    """Integrated mathematical entropy η = -ρ·s, using p = p0·(Rd·ρθ/p0)^γ."""
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    ρ  = Q[idx_2d_rho, :, :]
+    ρθ = Q[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * ρθ / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(ρ)
+    eta = -ρ * s
+
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.sum(eta * operators.weights_volume_integral))
+
+def entropy_prime_function(Q_relaxed, dQ, geom, operators):
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    ρ  = Q_relaxed[idx_2d_rho, :, :]
+    ρθ = Q_relaxed[idx_2d_rho_theta, :, :]
+    dρ  = dQ[idx_2d_rho, :, :]
+    dρθ = dQ[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * ρθ / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(ρ)
+
+    # dS/dρ = -s + γ,  dS/d(ρθ) = -γ ρ / (ρθ)
+    dS = (-s + gamma) * dρ - (gamma * ρ / ρθ) * dρθ
+
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.sum(dS * operators.weights_volume_integral))
+
+
+def entropy_rate(Q: NDArray, f: NDArray, geom: Cartesian2D, operators: DFROperators) -> float:
+    """Instantaneous entropy rate ⟨v(Q), f⟩ predicted by the spatial discretization.
+
+    Computes the spatial integral of v·f, where v = ∂η/∂Q are the entropy
+    variables for η = -ρ·s under the ρθ formulation (p = p0·(Rd·ρθ/p0)^γ).
+
+    Under this entropy choice, η depends only on (ρ, ρθ), so the momentum
+    components of v vanish and only the ρ and ρθ slots of f contribute.
+
+    Parameters
+    ----------
+    Q : state vector, shape (4, ne_z, ne_x, npts)
+    f : RHS evaluation at Q (i.e. du/dt), same shape as Q
+
+    Returns
+    -------
+    float : ∫ v(Q) · f dx, the predicted dη/dt at state Q.
+    """
+    xp = geom.device.xp
+    gamma = cpd / cvd
+
+    ρ  = Q[idx_2d_rho, :, :]
+    ρθ = Q[idx_2d_rho_theta, :, :]
+
+    p = p0 * (Rd * ρθ / p0) ** gamma
+    s = xp.log(p) - gamma * xp.log(ρ)
+
+    # v_1 = -s + γ, v_2 = v_3 = 0, v_4 = -γρ/(ρθ)
+    integrand = (-s + gamma) * f[idx_2d_rho, :, :] \
+              - (gamma * ρ / ρθ) * f[idx_2d_rho_theta, :, :]
+
+    return float(geom.Δx1 / 2.0 * geom.Δx3 / 2.0
+                 * xp.einsum('zhp,p->', integrand, operators.weights_volume_integral))
